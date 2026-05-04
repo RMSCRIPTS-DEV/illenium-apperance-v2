@@ -1,0 +1,1095 @@
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useTransition as useTransitionAnimation, animated } from 'react-spring';
+import { useNuiState } from '../../hooks/nuiState';
+import Nui from '../../Nui';
+import mock from '../../mock';
+import { DEV_NUI_FIXTURE_LOCALES } from '../../dev/fixtureLocales';
+import defaultAppearanceTheme from '../../theme/defaultAppearanceTheme';
+
+import {
+  CustomizationConfig,
+  PedAppearance,
+  AppearanceSettings,
+  PedHeadBlend,
+  PedFaceFeatures,
+  PedHeadOverlays,
+  PedHeadOverlayValue,
+  PedHair,
+  CameraState,
+  ClothesState,
+  Tattoo,
+  TattoosSettings,
+} from './interfaces';
+
+import {
+  APPEARANCE_INITIAL_STATE,
+  SETTINGS_INITIAL_STATE,
+  CAMERA_INITIAL_STATE,
+  ROTATE_INITIAL_STATE,
+  CLOTHES_INITIAL_STATE,
+  DEV_APPEARANCE_EXAMPLE,
+} from './settings';
+
+import Ped from './Ped';
+import HeadBlend from './HeadBlend';
+import FaceFeatures from './FaceFeatures';
+import HeadOverlays from './HeadOverlays';
+import Components from './Components';
+import Props from './Props';
+import Options from './Options';
+import Modal from '../Modal';
+import Tattoos from './Tattoos';
+import Sidebar from './components/Sidebar';
+import Header from './components/Header';
+import DevPanel, { type DevStore } from './components/DevPanel';
+
+import {
+  Wrapper,
+  MainPanel,
+  UnifiedShell,
+  ContentPanel,
+  Container,
+  TopCameraDock,
+  BottomToolDock,
+  ToolDockHeading,
+  DockControlsRow,
+  CameraButtons,
+  CameraButton,
+  RotateKeyRow,
+  RotateHintCol,
+} from './styles';
+import { User, Shirt, Footprints } from 'lucide-react';
+
+const isDev = !import.meta.env.PROD;
+
+// Dev mode config
+const DEV_CONFIG = {
+  ped: true,
+  headBlend: true,
+  faceFeatures: true,
+  headOverlays: true,
+  components: true,
+  props: true,
+  tattoos: true,
+  enableExit: true,
+  automaticFade: false,
+  hasTracker: false,
+  componentConfig: {
+    masks: true,
+    upperBody: true,
+    lowerBody: true,
+    bags: true,
+    shoes: true,
+    scarfAndChains: true,
+    shirts: true,
+    bodyArmor: true,
+    decals: true,
+    jackets: true,
+  },
+  propConfig: {
+    hats: true,
+    glasses: true,
+    ear: true,
+    watches: true,
+    bracelets: true,
+  },
+};
+
+// Dev-only: example tattoo items per zone so tattoos tab has data in pnpm dev
+const DEV_TATTOO_ITEMS: Record<string, { name: string; label: string; hashMale: string; hashFemale: string; zone: string; collection: string }[]> = {
+  ZONE_HEAD: [
+    { name: 'tattoo_head_1', label: 'Skull Front', hashMale: 'mpbeach_overlays', hashFemale: 'mpbeach_overlays', zone: 'ZONE_HEAD', collection: 'mpbeach_overlays' },
+    { name: 'tattoo_head_2', label: 'Tribal Lines', hashMale: 'mpbiker_overlays', hashFemale: 'mpbiker_overlays', zone: 'ZONE_HEAD', collection: 'mpbiker_overlays' },
+    { name: 'tattoo_head_3', label: 'Star', hashMale: 'mpchristmas2_overlays', hashFemale: 'mpchristmas2_overlays', zone: 'ZONE_HEAD', collection: 'mpchristmas2_overlays' },
+  ],
+  ZONE_TORSO: [
+    { name: 'tattoo_torso_1', label: 'Dragon', hashMale: 'mpbeach_overlays', hashFemale: 'mpbeach_overlays', zone: 'ZONE_TORSO', collection: 'mpbeach_overlays' },
+    { name: 'tattoo_torso_2', label: 'Wings', hashMale: 'mpbiker_overlays', hashFemale: 'mpbiker_overlays', zone: 'ZONE_TORSO', collection: 'mpbiker_overlays' },
+    { name: 'tattoo_torso_3', label: 'Chest Script', hashMale: 'mpchristmas2_overlays', hashFemale: 'mpchristmas2_overlays', zone: 'ZONE_TORSO', collection: 'mpchristmas2_overlays' },
+  ],
+  ZONE_LEFT_ARM: [
+    { name: 'tattoo_arm_l_1', label: 'Sleeve Start', hashMale: 'mpbeach_overlays', hashFemale: 'mpbeach_overlays', zone: 'ZONE_LEFT_ARM', collection: 'mpbeach_overlays' },
+    { name: 'tattoo_arm_l_2', label: 'Banded', hashMale: 'mpbiker_overlays', hashFemale: 'mpbiker_overlays', zone: 'ZONE_LEFT_ARM', collection: 'mpbiker_overlays' },
+  ],
+  ZONE_RIGHT_ARM: [
+    { name: 'tattoo_arm_r_1', label: 'Sleeve Start', hashMale: 'mpbeach_overlays', hashFemale: 'mpbeach_overlays', zone: 'ZONE_RIGHT_ARM', collection: 'mpbeach_overlays' },
+    { name: 'tattoo_arm_r_2', label: 'Banded', hashMale: 'mpbiker_overlays', hashFemale: 'mpbiker_overlays', zone: 'ZONE_RIGHT_ARM', collection: 'mpbiker_overlays' },
+  ],
+  ZONE_LEFT_LEG: [
+    { name: 'tattoo_leg_l_1', label: 'Calf', hashMale: 'mpbeach_overlays', hashFemale: 'mpbeach_overlays', zone: 'ZONE_LEFT_LEG', collection: 'mpbeach_overlays' },
+  ],
+  ZONE_RIGHT_LEG: [
+    { name: 'tattoo_leg_r_1', label: 'Calf', hashMale: 'mpbeach_overlays', hashFemale: 'mpbeach_overlays', zone: 'ZONE_RIGHT_LEG', collection: 'mpbeach_overlays' },
+  ],
+};
+
+if (isDev) {
+  mock('appearance_get_locales', () => DEV_NUI_FIXTURE_LOCALES);
+  mock('appearance_get_settings', () => ({
+    appearanceSettings: {
+      ...SETTINGS_INITIAL_STATE,
+      eyeColor: { min: 0, max: 24 },
+      hair: {
+        ...SETTINGS_INITIAL_STATE.hair,
+        color: {
+          items: [
+            [35, 30, 25], [50, 40, 30], [70, 55, 40], [90, 70, 50],
+            [110, 85, 60], [130, 100, 70], [150, 115, 80], [170, 130, 90],
+            [190, 145, 100], [210, 160, 110], [230, 175, 120], [250, 190, 130],
+          ],
+        },
+        highlight: {
+          items: [
+            [255, 220, 180], [255, 200, 150], [255, 180, 120], [255, 160, 90],
+            [230, 140, 70], [200, 120, 50], [170, 100, 40], [140, 80, 30],
+          ],
+        },
+      },
+      tattoos: {
+        ...SETTINGS_INITIAL_STATE.tattoos,
+        items: Object.fromEntries(
+          Object.entries(DEV_TATTOO_ITEMS).map(([zone, arr]) => [
+            zone,
+            arr.map((t) => ({ ...t, opacity: 1 })),
+          ])
+        ),
+      },
+    },
+  }));
+
+  // This mock returns BOTH config and appearanceData (with example clothing in dev)
+  mock('appearance_get_data', () => ({
+    config: DEV_CONFIG,
+    appearanceData: DEV_APPEARANCE_EXAMPLE,
+  }));
+
+  mock('appearance_change_model', (model: string) => ({
+    appearanceSettings: SETTINGS_INITIAL_STATE,
+    appearanceData: { ...DEV_APPEARANCE_EXAMPLE, model },
+  }));
+  mock('appearance_change_component', () => SETTINGS_INITIAL_STATE.components);
+  mock('appearance_change_prop', () => SETTINGS_INITIAL_STATE.props);
+  mock('appearance_set_camera', () => 1);
+  mock('appearance_rotate_ped', () => 1);
+  mock('get_theme_configuration', () => ({
+    currentTheme: 'default',
+    themes: [{ ...defaultAppearanceTheme }],
+  }));
+}
+
+/** Dev-only: config for each store type (which sidebar sections are visible) */
+function getDevStoreConfig(store: DevStore): CustomizationConfig {
+  const base = { ...DEV_CONFIG } as CustomizationConfig;
+  const cfg = { ...base, componentConfig: { ...base.componentConfig }, propConfig: { ...base.propConfig } };
+  switch (store) {
+    case 'barber':
+      cfg.ped = true;
+      cfg.headBlend = true;
+      cfg.faceFeatures = true;
+      cfg.headOverlays = true;
+      cfg.components = false;
+      cfg.props = false;
+      cfg.tattoos = false;
+      break;
+    case 'clothing':
+      cfg.ped = false;
+      cfg.headBlend = false;
+      cfg.faceFeatures = false;
+      cfg.headOverlays = false;
+      cfg.components = true;
+      cfg.props = true;
+      cfg.tattoos = false;
+      break;
+    case 'tattoo':
+      cfg.ped = false;
+      cfg.headBlend = false;
+      cfg.faceFeatures = false;
+      cfg.headOverlays = false;
+      cfg.components = false;
+      cfg.props = false;
+      cfg.tattoos = true;
+      break;
+    default:
+      break;
+  }
+  return cfg;
+}
+
+const DEV_STORE_HEADERS: Record<DevStore, { title: string; subtitle: string }> = {
+  full: { title: 'Appearance Editor', subtitle: 'Customize your character' },
+  barber: { title: 'Barber', subtitle: 'Hair & appearance' },
+  clothing: { title: 'Clothing Store', subtitle: 'Outfit & accessories' },
+  tattoo: { title: 'Tattoo Shop', subtitle: 'Tattoos' },
+};
+
+const Appearance = () => {
+  // In dev mode, initialize with mock data immediately
+  const [config, setConfig] = useState<CustomizationConfig | undefined>(
+    isDev ? DEV_CONFIG as CustomizationConfig : undefined
+  );
+
+  const [devStore, setDevStore] = useState<DevStore>('full');
+
+  const [data, setData] = useState<PedAppearance | undefined>(
+    isDev ? DEV_APPEARANCE_EXAMPLE : undefined
+  );
+  const [storedData, setStoredData] = useState<PedAppearance | undefined>(
+    isDev ? DEV_APPEARANCE_EXAMPLE : undefined
+  );
+  const [appearanceSettings, setAppearanceSettings] = useState<AppearanceSettings | undefined>(
+    isDev ? SETTINGS_INITIAL_STATE : undefined
+  );
+
+  const [camera, setCamera] = useState(CAMERA_INITIAL_STATE);
+  const [rotate, setRotate] = useState(ROTATE_INITIAL_STATE);
+  const [clothes, setClothes] = useState(CLOTHES_INITIAL_STATE);
+
+  const [saveModal, setSaveModal] = useState(false);
+  const [exitModal, setExitModal] = useState(false);
+  const [activeCategory, setActiveCategory] = useState('components');
+  const [activeCamera, setActiveCamera] = useState<string>('default');
+
+  // Mouse drag rotation state
+  const isDragging = useRef(false);
+  const lastMouseX = useRef(0);
+
+  const { display, setDisplay, locales, setLocales } = useNuiState();
+
+  // Camera button handlers - toggle between position and default
+  const handleCameraHead = useCallback(() => {
+    if (activeCamera === 'head') {
+      setActiveCamera('default');
+      Nui.post('appearance_set_camera', 'default');
+    } else {
+      setActiveCamera('head');
+      Nui.post('appearance_set_camera', 'head');
+    }
+  }, [activeCamera]);
+
+  const handleCameraBody = useCallback(() => {
+    if (activeCamera === 'body') {
+      setActiveCamera('default');
+      Nui.post('appearance_set_camera', 'default');
+    } else {
+      setActiveCamera('body');
+      Nui.post('appearance_set_camera', 'body');
+    }
+  }, [activeCamera]);
+
+  const handleCameraBottom = useCallback(() => {
+    if (activeCamera === 'bottom') {
+      setActiveCamera('default');
+      Nui.post('appearance_set_camera', 'default');
+    } else {
+      setActiveCamera('bottom');
+      Nui.post('appearance_set_camera', 'bottom');
+    }
+  }, [activeCamera]);
+
+  // Mouse drag rotation handlers
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    // Only start drag on left mouse button and on the background area
+    if (e.button === 0 && e.target === e.currentTarget) {
+      isDragging.current = true;
+      lastMouseX.current = e.clientX;
+      e.preventDefault();
+    }
+  }, []);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isDragging.current) return;
+    
+    const deltaX = e.clientX - lastMouseX.current;
+    lastMouseX.current = e.clientX;
+    
+    // Convert pixel movement to rotation (very fast - 3x multiplier)
+    const rotationDelta = -deltaX * 3;
+    
+    if (Math.abs(rotationDelta) > 0.1) {
+      Nui.post('appearance_rotate_ped', rotationDelta);
+    }
+  }, []);
+
+  const handleMouseUp = useCallback(() => {
+    isDragging.current = false;
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    isDragging.current = false;
+  }, []);
+
+  const wrapperTransition = useTransitionAnimation(display.appearance, null, {
+    from: { transform: 'translateX(-50px)', opacity: 0 },
+    enter: { transform: 'translateY(0)', opacity: 1 },
+    leave: { transform: 'translateX(-50px)', opacity: 0 },
+  });
+
+  const saveModalTransition = useTransitionAnimation(saveModal, null, {
+    from: { opacity: 0 },
+    enter: { opacity: 1 },
+    leave: { opacity: 0 },
+  });
+
+  const exitModalTransition = useTransitionAnimation(exitModal, null, {
+    from: { opacity: 0 },
+    enter: { opacity: 1 },
+    leave: { opacity: 0 },
+  });
+
+  const handleTurnAround = useCallback(() => {
+    Nui.post('appearance_turn_around');
+  }, []);
+
+  const handleSetClothes = useCallback(
+    (key: keyof ClothesState) => {
+      setClothes({ ...clothes, [key]: !clothes[key] });
+      if (!clothes[key]) {
+        Nui.post('appearance_remove_clothes', key);
+      } else {
+        Nui.post('appearance_wear_clothes', { data, key });
+      }
+    },
+    [data, clothes, setClothes],
+  );
+
+  const handleSetCamera = useCallback(
+    (key: keyof CameraState) => {
+      setCamera({ ...CAMERA_INITIAL_STATE, [key]: !camera[key] });
+      setRotate(ROTATE_INITIAL_STATE);
+
+      if (!camera[key]) {
+        Nui.post('appearance_set_camera', key);
+      } else {
+        Nui.post('appearance_set_camera', 'default');
+      }
+    },
+    [camera, setCamera, setRotate],
+  );
+
+  const handleRotateLeft = useCallback(() => {
+    setRotate({ left: !rotate.left, right: false });
+
+    if (!rotate.left) {
+      Nui.post('appearance_rotate_camera', 'left');
+    } else {
+      Nui.post('appearance_set_camera', 'current');
+    }
+  }, [setRotate, rotate]);
+
+  const handleRotateRight = useCallback(() => {
+    setRotate({ left: false, right: !rotate.right });
+
+    if (!rotate.right) {
+      Nui.post('appearance_rotate_camera', 'right');
+    } else {
+      Nui.post('appearance_set_camera', 'current');
+    }
+  }, [setRotate, rotate]);
+
+  const handleSaveModal = useCallback(() => {
+    setSaveModal(true);
+  }, [setSaveModal]);
+
+  const handleExitModal = useCallback(() => {
+    setExitModal(true);
+  }, [setExitModal]);
+
+  const handleSave = useCallback(
+    async (accept: boolean) => {
+      if (accept) {
+        await Nui.post('appearance_save', data);
+        setSaveModal(false);
+      } else {
+        setSaveModal(false);
+      }
+    },
+    [setSaveModal, data],
+  );
+
+  const handleExit = useCallback(
+    async (accept: boolean) => {
+      if (accept) {
+        await Nui.post('appearance_exit');
+        setExitModal(false);
+      } else {
+        setExitModal(false);
+      }
+    },
+    [setExitModal],
+  );
+
+  const handleModelChange = useCallback(
+    async (value: string) => {
+      const { appearanceSettings: _appearanceSettings, appearanceData } = await Nui.post(
+        'appearance_change_model',
+        value,
+      );
+
+      setAppearanceSettings(_appearanceSettings);
+      setData(appearanceData);
+    },
+    [setData, setAppearanceSettings],
+  );
+
+  const handleHeadBlendChange = useCallback(
+    (key: keyof PedHeadBlend, value: number) => {
+      if (!data) return;
+
+      const updatedHeadBlend = { ...data.headBlend, [key]: value };
+
+      const updatedData = { ...data, headBlend: updatedHeadBlend };
+
+      setData(updatedData);
+
+      Nui.post('appearance_change_head_blend', updatedHeadBlend);
+    },
+    [data, setData],
+  );
+
+  const handleFaceFeatureChange = useCallback(
+    (key: keyof PedFaceFeatures, value: number) => {
+      if (!data) return;
+
+      const updatedFaceFeatures = { ...data.faceFeatures, [key]: value };
+
+      const updatedData = { ...data, faceFeatures: updatedFaceFeatures };
+
+      setData(updatedData);
+
+      Nui.post('appearance_change_face_feature', updatedFaceFeatures);
+    },
+    [data, setData],
+  );
+
+  const handleHairChange = useCallback(
+    async (key: keyof PedHair, value: number) => {
+      if (!data || !appearanceSettings) return;
+
+      const updatedHair = { ...data.hair, [key]: value };
+
+      const updatedData = { ...data, hair: updatedHair };
+
+      setData(updatedData);
+
+      const updatedHairSettings = await Nui.post('appearance_change_hair', updatedHair);
+
+      const updatedSettings = { ...appearanceSettings, hair: updatedHairSettings };
+
+      setAppearanceSettings(updatedSettings);
+    },
+    [data, setData, appearanceSettings, setAppearanceSettings],
+  );
+
+  const handleChangeFade = useCallback(async (value: number) => {
+    if (!data || !appearanceSettings) return;
+      const { tattoos } = data;
+      const updatedTattoos = { ...tattoos };
+      const tattoo = appearanceSettings.tattoos.items['ZONE_HAIR'][value]
+      if (!updatedTattoos[tattoo.zone]) updatedTattoos[tattoo.zone] = [];
+      updatedTattoos[tattoo.zone] = [tattoo];
+      await Nui.post('appearance_apply_tattoo', updatedTattoos);
+      setData({ ...data, tattoos: updatedTattoos });
+  }, [appearanceSettings, data, setData])
+
+  const handleHeadOverlayChange = useCallback(
+    (key: keyof PedHeadOverlays, option: keyof PedHeadOverlayValue, value: number) => {
+      if (!data) return;
+
+      const updatedValue = { ...data.headOverlays[key], [option]: value };
+
+      const updatedData = { ...data, headOverlays: { ...data.headOverlays, [key]: updatedValue } };
+
+      setData(updatedData);
+
+      Nui.post('appearance_change_head_overlay', { ...data.headOverlays, [key]: updatedValue });
+    },
+    [data, setData],
+  );
+
+  const handleEyeColorChange = useCallback(
+    (value: number) => {
+      if (!data) return;
+
+      const updatedData = { ...data, eyeColor: value };
+
+      setData(updatedData);
+
+      Nui.post('appearance_change_eye_color', value);
+    },
+    [data, setData],
+  );
+
+  const handleComponentDrawableChange = useCallback(
+    async (component_id: number, drawable: number) => {
+      if (!data || !appearanceSettings) return;
+
+      const component = data.components.find(c => c.component_id === component_id);
+
+      if (!component) return;
+
+      const updatedComponent = { ...component, drawable, texture: 0 };
+
+      const filteredComponents = data.components.filter(c => c.component_id !== component_id);
+
+      const updatedComponents = [...filteredComponents, updatedComponent];
+
+      const updatedData = { ...data, components: updatedComponents };
+
+      setData(updatedData);
+
+      const updatedComponentSettings = await Nui.post('appearance_change_component', updatedComponent);
+
+      const filteredComponentsSettings = appearanceSettings.components.filter(c => c.component_id !== component_id);
+
+      const updatedComponentsSettings = [...filteredComponentsSettings, updatedComponentSettings];
+
+      const updatedSettings = { ...appearanceSettings, components: updatedComponentsSettings };
+
+      setAppearanceSettings(updatedSettings);
+    },
+    [data, setData, appearanceSettings, setAppearanceSettings],
+  );
+
+  const handleComponentTextureChange = useCallback(
+    async (component_id: number, texture: number) => {
+      if (!data || !appearanceSettings) return;
+
+      const component = data.components.find(c => c.component_id === component_id);
+
+      if (!component) return;
+
+      const updatedComponent = { ...component, texture };
+
+      const filteredComponents = data.components.filter(c => c.component_id !== component_id);
+
+      const updatedComponents = [...filteredComponents, updatedComponent];
+
+      const updatedData = { ...data, components: updatedComponents };
+
+      setData(updatedData);
+
+      const updatedComponentSettings = await Nui.post('appearance_change_component', updatedComponent);
+
+      const filteredComponentsSettings = appearanceSettings.components.filter(c => c.component_id !== component_id);
+
+      const updatedComponentsSettings = [...filteredComponentsSettings, updatedComponentSettings];
+
+      const updatedSettings = { ...appearanceSettings, components: updatedComponentsSettings };
+
+      setAppearanceSettings(updatedSettings);
+    },
+    [data, setData, appearanceSettings, setAppearanceSettings],
+  );
+
+  const handlePropDrawableChange = useCallback(
+    async (prop_id: number, drawable: number) => {
+      if (!data || !appearanceSettings) return;
+
+      const prop = data.props.find(p => p.prop_id === prop_id);
+
+      if (!prop) return;
+
+      const updatedProp = { ...prop, drawable, texture: 0 };
+
+      const filteredProps = data.props.filter(p => p.prop_id !== prop_id);
+
+      const updatedProps = [...filteredProps, updatedProp];
+
+      const updatedData = { ...data, props: updatedProps };
+
+      setData(updatedData);
+
+      const updatedPropSettings = await Nui.post('appearance_change_prop', updatedProp);
+
+      const filteredPropsSettings = appearanceSettings.props.filter(c => c.prop_id !== prop_id);
+
+      const updatedPropsSettings = [...filteredPropsSettings, updatedPropSettings];
+
+      const updatedSettings = { ...appearanceSettings, props: updatedPropsSettings };
+
+      setAppearanceSettings(updatedSettings);
+    },
+    [data, setData, appearanceSettings, setAppearanceSettings],
+  );
+
+  const handlePropTextureChange = useCallback(
+    async (prop_id: number, texture: number) => {
+      if (!data || !appearanceSettings) return;
+
+      const prop = data.props.find(p => p.prop_id === prop_id);
+
+      if (!prop) return;
+
+      const updatedProp = { ...prop, texture };
+
+      const filteredProps = data.props.filter(p => p.prop_id !== prop_id);
+
+      const updatedProps = [...filteredProps, updatedProp];
+
+      const updatedData = { ...data, props: updatedProps };
+
+      setData(updatedData);
+
+      const updatedPropSettings = await Nui.post('appearance_change_prop', updatedProp);
+
+      const filteredPropsSettings = appearanceSettings.props.filter(c => c.prop_id !== prop_id);
+
+      const updatedPropsSettings = [...filteredPropsSettings, updatedPropSettings];
+
+      const updatedSettings = { ...appearanceSettings, props: updatedPropsSettings };
+
+      setAppearanceSettings(updatedSettings);
+    },
+    [data, setData, appearanceSettings, setAppearanceSettings],
+  );
+
+  const isPedFreemodeModel = useMemo(() => {
+    if (!data) return;
+
+    return data.model === 'mp_m_freemode_01' || data.model === 'mp_f_freemode_01';
+  }, [data]);
+
+  const isPedMale = useMemo(() => {
+    if(!data) return;
+
+    if (data.model === 'mp_m_freemode_01') {
+      return true;
+    }
+
+    return false
+  }, [data]);
+
+  const filterTattoos = (tattooSettings: TattoosSettings) => {
+    for(const zone in tattooSettings.items) {
+      tattooSettings.items[zone] = tattooSettings.items[zone].filter(tattoo => {
+        if(isPedMale && tattoo.hashMale !== "") {
+          return tattoo;
+        } else if(!isPedMale && tattoo.hashFemale !== "") {
+          return tattoo;
+        }
+      })
+    }
+    return tattooSettings;
+  };
+
+  const handleApplyTattoo = useCallback(
+    async (tattoo: Tattoo, opacity: number) => {
+      if (!data) return;
+      tattoo.opacity = opacity;
+      const { tattoos } = data;
+      const updatedTattoos = JSON.parse(JSON.stringify({ ...tattoos}));
+      if (!updatedTattoos[tattoo.zone]) updatedTattoos[tattoo.zone] = [];
+      updatedTattoos[tattoo.zone].push(tattoo);
+      const applied = await Nui.post('appearance_apply_tattoo', {tattoo, updatedTattoos});
+      if(applied) {
+        setData({ ...data, tattoos: updatedTattoos });
+      }
+    },
+    [data, setData],
+  );
+
+  const handlePreviewTattoo = useCallback(
+    (tattoo: Tattoo, opacity: number) => {
+      if (!data) return;
+      tattoo.opacity = opacity;
+      const { tattoos } = data;
+      Nui.post('appearance_preview_tattoo', { data: tattoos, tattoo });
+    },
+    [data],
+  );
+
+  const handleDeleteTattoo = useCallback(
+    async (tattoo: Tattoo) => {
+      if (!data) return;
+      const { tattoos } = data;
+      const updatedTattoos = tattoos;
+      // eslint-disable-next-line prettier/prettier
+      updatedTattoos[tattoo.zone] = updatedTattoos[tattoo.zone].filter(tattooDelete => tattooDelete.name !== tattoo.name);
+      await Nui.post('appearance_delete_tattoo', updatedTattoos);
+      setData({ ...data, tattoos: updatedTattoos });
+    },
+    [data, setData],
+  );
+
+  const handleClearTattoos = useCallback(
+    async () => {
+      if (!data) return;
+      const { tattoos } = data;
+      const updatedTattoos = { ...tattoos };
+      for (var zone in updatedTattoos) {
+        if (zone !== "ZONE_HAIR") {
+          updatedTattoos[zone] = [];
+        }
+      }
+      await Nui.post('appearance_delete_tattoo', updatedTattoos);
+      setData({ ...data, tattoos: updatedTattoos });
+    },
+    [data, setData],
+  );
+
+  useEffect(() => {
+    if(!locales) {
+      Nui.post('appearance_get_locales').then(result => setLocales(result));
+    }
+
+    Nui.onEvent('appearance_display', (data : any) => {
+      setDisplay({ appearance: true, asynchronous: data.asynchronous });
+    });
+
+    Nui.onEvent('appearance_hide', () => {
+      setDisplay({ appearance: false, asynchronous: false });
+      setData(APPEARANCE_INITIAL_STATE);
+      setStoredData(APPEARANCE_INITIAL_STATE);
+      //setAppearanceSettings(SETTINGS_INITIAL_STATE);
+      setCamera(CAMERA_INITIAL_STATE);
+      setRotate(ROTATE_INITIAL_STATE);
+    });
+  }, []);
+
+  const reloadAppearancePayload = useCallback(async (sequentialLoading: boolean) => {
+    const applySettings = (raw: unknown) => {
+      const r = raw as { appearanceSettings?: AppearanceSettings };
+      if (r?.appearanceSettings) setAppearanceSettings(r.appearanceSettings);
+    };
+
+    const applyData = (raw: unknown) => {
+      const r = raw as { config?: CustomizationConfig; appearanceData?: PedAppearance };
+      if (r?.config && r?.appearanceData) {
+        setConfig(r.config);
+        setStoredData(r.appearanceData);
+        setData(r.appearanceData);
+      }
+    };
+
+    if (sequentialLoading) {
+      applySettings(await Nui.post('appearance_get_settings'));
+      applyData(await Nui.post('appearance_get_data'));
+    } else {
+      const [settingsRes, dataRes] = await Promise.all([
+        Nui.post('appearance_get_settings'),
+        Nui.post('appearance_get_data'),
+      ]);
+      applySettings(settingsRes);
+      applyData(dataRes);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!display.appearance) return undefined;
+    let cancelled = false;
+    reloadAppearancePayload(display.asynchronous).catch(err => {
+      if (!cancelled) console.error('[Appearance]', err);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [display.appearance, display.asynchronous, reloadAppearancePayload]);
+
+  const effectiveConfig = useMemo(
+    () => (!config ? undefined : isDev ? getDevStoreConfig(devStore) : config),
+    [config, devStore],
+  );
+
+  const handleResetData = useCallback(() => {
+    setData(DEV_APPEARANCE_EXAMPLE);
+    setStoredData(DEV_APPEARANCE_EXAMPLE);
+  }, []);
+
+  // When config loads or dev store changes, auto-select first available category if current has no content
+  useEffect(() => {
+    if (!effectiveConfig) return;
+    const categoryOrder = ['ped', 'headBlend', 'faceFeatures', 'headOverlays', 'hair', 'makeup', 'tattoos', 'components', 'props'] as const;
+    const getCategoryConfigKey = (cat: string) =>
+      (['headOverlays', 'hair', 'makeup'].includes(cat) ? 'headOverlays' : cat) as keyof typeof effectiveConfig;
+    const hasContent = (cat: string) => {
+      const key = getCategoryConfigKey(cat);
+      return effectiveConfig[key] === true;
+    };
+    if (!hasContent(activeCategory)) {
+      const firstAvailable = categoryOrder.find(hasContent);
+      if (firstAvailable) setActiveCategory(firstAvailable);
+    }
+  }, [effectiveConfig, activeCategory]);
+
+  const activeLocales = locales || (isDev ? DEV_NUI_FIXTURE_LOCALES : null);
+
+  if (!display.appearance || !config || !appearanceSettings || !data || !storedData || !activeLocales) {
+    return null;
+  }
+
+  const renderCategoryContent = () => {
+    const cfg = effectiveConfig ?? config;
+    switch (activeCategory) {
+      case 'ped':
+        return cfg.ped && (
+          <Ped
+            settings={appearanceSettings.ped}
+            storedData={storedData.model}
+            data={data.model}
+            handleModelChange={handleModelChange}
+          />
+        );
+      case 'headBlend':
+        return isPedFreemodeModel && cfg.headBlend && (
+          <HeadBlend
+            settings={appearanceSettings.headBlend}
+            storedData={storedData.headBlend}
+            data={data.headBlend}
+            handleHeadBlendChange={handleHeadBlendChange}
+          />
+        );
+      case 'faceFeatures':
+        return isPedFreemodeModel && cfg.faceFeatures && (
+          <FaceFeatures
+            settings={appearanceSettings.faceFeatures}
+            storedData={storedData.faceFeatures}
+            data={data.faceFeatures}
+            handleFaceFeatureChange={handleFaceFeatureChange}
+          />
+        );
+      case 'headOverlays':
+      case 'hair':
+      case 'makeup':
+        return cfg.headOverlays && (
+          <HeadOverlays
+            activeCategory={activeCategory as 'headOverlays' | 'hair' | 'makeup'}
+            settings={{
+              hair: appearanceSettings.hair,
+              headOverlays: appearanceSettings.headOverlays,
+              eyeColor: appearanceSettings.eyeColor,
+              fade: appearanceSettings.tattoos.items['ZONE_HAIR']
+            }}
+            storedData={{
+              hair: storedData.hair,
+              headOverlays: storedData.headOverlays,
+              eyeColor: storedData.eyeColor,
+              fade: storedData.tattoos?.ZONE_HAIR?.length > 0 ? storedData.tattoos.ZONE_HAIR[0] : null
+            }}
+            data={{
+              hair: data.hair,
+              headOverlays: data.headOverlays,
+              eyeColor: data.eyeColor,
+              fade: data.tattoos?.ZONE_HAIR?.length > 0 ? data.tattoos.ZONE_HAIR[0] : null
+            }}
+            isPedFreemodeModel={isPedFreemodeModel}
+            handleHairChange={handleHairChange}
+            handleHeadOverlayChange={handleHeadOverlayChange}
+            handleEyeColorChange={handleEyeColorChange}
+            handleChangeFade={handleChangeFade}
+            automaticFade={config.automaticFade}
+            gender={isPedMale ? 'male' : 'female'}
+          />
+        );
+      case 'components':
+        return cfg.components && (
+          <Components
+            settings={appearanceSettings.components}
+            data={data.components}
+            storedData={storedData.components}
+            handleComponentDrawableChange={handleComponentDrawableChange}
+            handleComponentTextureChange={handleComponentTextureChange}
+            componentConfig={cfg.componentConfig}
+            hasTracker={config.hasTracker}
+            isPedFreemodeModel={isPedFreemodeModel}
+            gender={isPedMale ? 'male' : 'female'}
+          />
+        );
+      case 'props':
+        return cfg.props && (
+          <Props
+            settings={appearanceSettings.props}
+            data={data.props}
+            storedData={storedData.props}
+            handlePropDrawableChange={handlePropDrawableChange}
+            handlePropTextureChange={handlePropTextureChange}
+            propConfig={cfg.propConfig}
+            gender={isPedMale ? 'male' : 'female'}
+          />
+        );
+      case 'tattoos':
+        return isPedFreemodeModel && cfg.tattoos && (
+          <Tattoos
+            settings={filterTattoos(appearanceSettings.tattoos)}
+            data={data.tattoos}
+            storedData={storedData.tattoos}
+            handleApplyTattoo={handleApplyTattoo}
+            handlePreviewTattoo={handlePreviewTattoo}
+            handleDeleteTattoo={handleDeleteTattoo}
+            handleClearTattoos={handleClearTattoos}
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
+  // Main panel content - extracted for reuse
+  const mainContent = (
+    <Wrapper
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseLeave}
+      style={{ cursor: isDragging.current ? 'grabbing' : 'default' }}
+    >
+      <TopCameraDock aria-labelledby="appearance-dock-camera-title">
+        <ToolDockHeading id="appearance-dock-camera-title">
+          {activeLocales.camera?.dockTitle ?? 'Camera'}
+        </ToolDockHeading>
+        <DockControlsRow>
+          <CameraButtons>
+            <CameraButton
+              type="button"
+              onClick={handleCameraHead}
+              active={activeCamera === 'head'}
+              title={activeLocales.camera?.head ?? 'Head'}
+              aria-label={activeLocales.camera?.head ?? 'Head'}
+            >
+              <User strokeWidth={1.5} stroke="currentColor" />
+            </CameraButton>
+            <CameraButton
+              type="button"
+              onClick={handleCameraBody}
+              active={activeCamera === 'body'}
+              title={activeLocales.camera?.torso ?? 'Torso'}
+              aria-label={activeLocales.camera?.torso ?? 'Torso'}
+            >
+              <Shirt strokeWidth={1.5} stroke="currentColor" />
+            </CameraButton>
+            <CameraButton
+              type="button"
+              onClick={handleCameraBottom}
+              active={activeCamera === 'bottom'}
+              title={activeLocales.camera?.legs ?? 'Legs'}
+              aria-label={activeLocales.camera?.legs ?? 'Legs'}
+            >
+              <Footprints strokeWidth={1.5} stroke="currentColor" />
+            </CameraButton>
+          </CameraButtons>
+        </DockControlsRow>
+      </TopCameraDock>
+      <BottomToolDock aria-labelledby="appearance-dock-controls-title">
+        <ToolDockHeading id="appearance-dock-controls-title">
+          {activeLocales.controls?.dockTitle ?? 'Rotate'}
+        </ToolDockHeading>
+        <DockControlsRow>
+          <RotateKeyRow
+            aria-label={`${activeLocales.controls?.rotateLeft ?? 'Rotate left'} (A) — ${activeLocales.controls?.rotateRight ?? 'Rotate right'} (D)`}
+          >
+            <RotateHintCol>
+              <kbd>A</kbd>
+            </RotateHintCol>
+            <RotateHintCol>
+              <kbd>D</kbd>
+            </RotateHintCol>
+          </RotateKeyRow>
+        </DockControlsRow>
+      </BottomToolDock>
+      {isDev && (
+        <DevPanel
+          store={devStore}
+          onStoreChange={setDevStore}
+          onLoadExampleData={() => reloadAppearancePayload(false)}
+          onResetData={handleResetData}
+        />
+      )}
+      <MainPanel>
+        <UnifiedShell>
+          <Sidebar
+            activeCategory={activeCategory}
+            onCategoryChange={setActiveCategory}
+            config={effectiveConfig ?? config}
+            clothes={clothes}
+            onSetClothes={handleSetClothes}
+            locales={activeLocales}
+          />
+          <ContentPanel>
+            <Header
+              title={isDev ? DEV_STORE_HEADERS[devStore].title : (activeLocales.header?.title ?? 'Appearance Editor')}
+              subtitle={isDev ? DEV_STORE_HEADERS[devStore].subtitle : (activeLocales.header?.subtitle ?? 'Customize your character')}
+              cancelLabel={activeLocales.footer?.cancel ?? 'Cancel'}
+              saveLabel={activeLocales.footer?.save ?? 'Save'}
+              onCancel={handleExitModal}
+              onSave={handleSaveModal}
+            />
+            <Container>{renderCategoryContent()}</Container>
+          </ContentPanel>
+        </UnifiedShell>
+      </MainPanel>
+    </Wrapper>
+  );
+
+  // In dev mode, render directly without animation
+  if (isDev) {
+    return (
+      <>
+        {mainContent}
+        {saveModal && (
+          <Modal
+            title={activeLocales.modal.save.title}
+            description={activeLocales.modal.save.description}
+            accept={activeLocales.modal.accept}
+            decline={activeLocales.modal.decline}
+            handleAccept={() => handleSave(true)}
+            handleDecline={() => handleSave(false)}
+          />
+        )}
+        {exitModal && (
+          <Modal
+            title={activeLocales.modal.exit.title}
+            description={activeLocales.modal.exit.description}
+            accept={activeLocales.modal.accept}
+            decline={activeLocales.modal.decline}
+            handleAccept={() => handleExit(true)}
+            handleDecline={() => handleExit(false)}
+          />
+        )}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {wrapperTransition.map(
+        ({ item, key, props: style }) =>
+          item && (
+            <animated.div key={key} style={style}>
+              {mainContent}
+            </animated.div>
+          ),
+      )}
+      {saveModalTransition.map(
+        ({ item, key, props: style }) =>
+          item && (
+            <animated.div key={key} style={style}>
+              <Modal
+                title={activeLocales.modal.save.title}
+                description={activeLocales.modal.save.description}
+                accept={activeLocales.modal.accept}
+                decline={activeLocales.modal.decline}
+                handleAccept={() => handleSave(true)}
+                handleDecline={() => handleSave(false)}
+              />
+            </animated.div>
+          ),
+      )}
+      {exitModalTransition.map(
+        ({ item, key, props: style }) =>
+          item && (
+            <animated.div key={key} style={style}>
+              <Modal
+                title={activeLocales.modal.exit.title}
+                description={activeLocales.modal.exit.description}
+                accept={activeLocales.modal.accept}
+                decline={activeLocales.modal.decline}
+                handleAccept={() => handleExit(true)}
+                handleDecline={() => handleExit(false)}
+              />
+            </animated.div>
+          ),
+      )}
+    </>
+  );
+};
+
+export default Appearance;

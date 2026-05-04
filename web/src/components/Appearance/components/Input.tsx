@@ -1,0 +1,313 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import styled from 'styled-components';
+import { vp } from '../../../styles/scale';
+import { ChevronLeft, ChevronRight, LayoutGrid, List } from 'lucide-react';
+import ThumbnailGrid from './ThumbnailGrid';
+import { ThumbnailTarget } from '../../../utils/thumbnails';
+
+interface InputProps {
+  title?: string;
+  min?: number;
+  max?: number;
+  blacklisted?: number[];
+  defaultValue: number;
+  clientValue: number;
+  onChange: (value: number) => void;
+  thumbnail?: ThumbnailTarget;
+}
+
+const GRID_MODE_STORAGE_KEY = 'illenium_grid_mode_v1';
+
+const readGridMode = (): boolean => {
+  try {
+    return window.localStorage.getItem(GRID_MODE_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+
+const Container = styled.div`
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: ${vp(10)};
+`;
+
+const LabelRow = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: ${vp(8)};
+`;
+
+const Label = styled.span`
+  font-size: ${vp(11)};
+  color: ${({ theme }) => `rgb(${theme.mutedTextColor || '144, 146, 150'})`};
+  font-weight: 500;
+`;
+
+const ToggleButton = styled.button`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: ${vp(24)};
+  height: ${vp(24)};
+  background: transparent;
+  border: 1px solid ${({ theme }) => `rgba(${theme.borderColorSoft || '55, 58, 64'}, 1)`};
+  border-radius: ${vp(4)};
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  svg {
+    width: ${vp(12)};
+    height: ${vp(12)};
+    color: ${({ theme }) => `rgb(${theme.mutedTextColorSoft || '92, 95, 102'})`};
+    transition: color 0.15s ease;
+  }
+
+  &:hover {
+    border-color: ${({ theme }) => `rgb(${theme.accentColor || '77, 171, 247'})`};
+    svg {
+      color: ${({ theme }) => `rgb(${theme.accentColor || '77, 171, 247'})`};
+    }
+  }
+`;
+
+const InputWrapper = styled.div`
+  display: flex;
+  align-items: center;
+  background-color: ${({ theme }) => `rgb(${theme.surfaceBackground || '37, 38, 43'})`};
+  border: ${({ theme }) => `1px solid rgba(${theme.borderColorSoft || '55, 58, 64'}, 1)`};
+  border-radius: ${vp(6)};
+  overflow: hidden;
+  transition: all 0.15s ease;
+  
+  &:hover {
+    background-color: ${({ theme }) => `rgb(${theme.primaryBackgroundSelected || '55, 58, 64'})`};
+    border-color: ${({ theme }) => `rgb(${theme.mutedTextColorSoft || '92, 95, 102'})`};
+  }
+`;
+
+const Button = styled.button`
+  width: ${vp(32)};
+  height: ${vp(32)};
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  
+  svg {
+    width: ${vp(12)};
+    height: ${vp(12)};
+    color: ${({ theme }) => `rgb(${theme.mutedTextColorSoft || '92, 95, 102'})`};
+    transition: color 0.2s ease;
+  }
+  
+  &:hover {
+    background: ${({ theme }) => `rgba(${theme.accentColor || '77, 171, 247'}, 0.15)`};
+    border-color: ${({ theme }) => `1px solid rgba(${theme.borderColorSoft || '55, 58, 64'}, 1)`};
+    
+    svg {
+      color: ${({ theme }) => `rgb(${theme.accentColor || '77, 171, 247'})`};
+    }
+  }
+  
+  &:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    
+    &:hover {
+      background: transparent;
+      
+      svg {
+        color: ${({ theme }) => `rgb(${theme.mutedTextColorSoft || '92, 95, 102'})`};
+      }
+    }
+  }
+`;
+
+const ValueInput = styled.input`
+  flex: 1;
+  text-align: center;
+  font-size: ${vp(12)};
+  color: ${({ theme }) => `rgb(${theme.fontColor || '193, 194, 197'})`};
+  font-weight: 500;
+  min-width: ${vp(50)};
+  background: transparent;
+  border: none;
+  outline: none;
+  height: ${vp(32)};
+  font-family: 'Nexa-Book', sans-serif;
+  
+  &::-webkit-outer-spin-button,
+  &::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  
+  -moz-appearance: textfield;
+`;
+
+const Input: React.FC<InputProps> = ({ title, min = 0, max = 255, blacklisted = [], defaultValue, clientValue, onChange, thumbnail }) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [gridMode, setGridMode] = useState<boolean>(() => readGridMode());
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === GRID_MODE_STORAGE_KEY) {
+        setGridMode(e.newValue === '1');
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  const toggleGridMode = () => {
+    setGridMode(prev => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(GRID_MODE_STORAGE_KEY, next ? '1' : '0');
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
+
+  const isBlacklisted = function (_value: number, blacklisted: number[]) {
+    if (!blacklisted || blacklisted.length === 0) {
+      return false;
+    }
+    for (var i = 0; i < blacklisted.length; i++) {
+      const blacklistValue = Number(blacklisted[i]);
+      if (!isNaN(blacklistValue) && blacklistValue === _value) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  const normalize = function (_value: number) {
+    if (_value < min) {
+      _value = max;
+    } else if (_value > max) {
+      _value = min;
+    }
+
+    return _value;
+  }
+
+  const checkBlacklisted = function (_value: number, blacklisted: number[], factor: number, currentValue: number, minVal: number, maxVal: number) {
+    let targetValue = normalize(_value);
+
+    if (!blacklisted || blacklisted.length === 0) {
+      return targetValue;
+    }
+
+    if(factor === 0) {
+      if(!isBlacklisted(targetValue, blacklisted)) {
+        return targetValue;
+      }
+      factor = targetValue > currentValue ? 1 : -1;
+    }
+
+    if (!isBlacklisted(targetValue, blacklisted)) {
+      return targetValue;
+    }
+
+    let nextValue = targetValue;
+    let attempts = 0;
+    const maxAttempts = maxVal - minVal + 1;
+
+    do {
+      nextValue = normalize(nextValue + factor);
+      attempts++;
+      if (attempts >= maxAttempts) {
+        return targetValue;
+      }
+    } while (isBlacklisted(nextValue, blacklisted));
+
+    return nextValue;
+  };
+
+  const getSafeValue = useCallback(
+    (_value: number, factor: number, currentValue: number) => {
+      let safeValue = _value;
+      return checkBlacklisted(safeValue, blacklisted, factor, currentValue, min, max);
+    },
+    [min, max, blacklisted],
+  );
+
+  const handleChange = useCallback(
+    (_value: any, factor: number) => {
+      let parsedValue;
+
+      if (_value === null || _value === undefined) return;
+      if (Number.isNaN(_value)) return;
+
+      if (typeof _value === 'string') {
+        parsedValue = parseInt(_value, 10);
+        if (isNaN(parsedValue)) return;
+      } else {
+        parsedValue = _value;
+      }
+
+      const baseValue = defaultValue !== undefined ? defaultValue : clientValue;
+      const safeValue = getSafeValue(parsedValue, factor, baseValue);
+      onChange(safeValue);
+    },
+    [getSafeValue, onChange, defaultValue, clientValue],
+  );
+
+  const labelText = title ? `${title} (${max})` : undefined;
+
+  const currentValue = defaultValue !== undefined ? defaultValue : clientValue;
+
+  return (
+    <Container>
+      {(labelText || thumbnail) && (
+        <LabelRow>
+          {labelText ? <Label>{labelText}</Label> : <span />}
+          {thumbnail && (
+            <ToggleButton
+              type="button"
+              title={gridMode ? 'Switch to arrows' : 'Switch to image grid'}
+              onClick={toggleGridMode}
+            >
+              {gridMode ? <List strokeWidth={2} stroke="currentColor" /> : <LayoutGrid strokeWidth={2} stroke="currentColor" />}
+            </ToggleButton>
+          )}
+        </LabelRow>
+      )}
+      <InputWrapper>
+        <Button type="button" onClick={() => handleChange(currentValue - 1, -1)}>
+          <ChevronLeft strokeWidth={2} stroke="currentColor" />
+        </Button>
+        <ValueInput 
+          type="number" 
+          ref={inputRef} 
+          value={defaultValue} 
+          onChange={e => handleChange(e.target.value, 0)} 
+        />
+        <Button type="button" onClick={() => handleChange(currentValue + 1, 1)}>
+          <ChevronRight strokeWidth={2} stroke="currentColor" />
+        </Button>
+      </InputWrapper>
+      {thumbnail && gridMode && (
+        <ThumbnailGrid
+          target={thumbnail}
+          min={min}
+          max={max}
+          selected={currentValue}
+          blacklisted={blacklisted}
+          onSelect={value => handleChange(value, 0)}
+        />
+      )}
+    </Container>
+  );
+};
+
+export default Input;

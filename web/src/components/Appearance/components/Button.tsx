@@ -1,0 +1,45 @@
+import { ReactNode } from 'react';
+import styled from 'styled-components';
+import { vp } from '../../../styles/scale';
+
+interface ButtonProps {
+  children: string | ReactNode;
+  margin?: string;
+  width?: string;
+  onClick: () => void;
+}
+
+/* rm-billing Pay button style: small, colored, radius sm */
+const CustomButton = styled.span<ButtonProps>`
+  padding: ${vp(6)} ${vp(12)};
+  margin: ${props => props?.margin || "0px"};
+  width: ${props => props?.width || "auto"};
+  font-size: ${vp(12)};
+  font-weight: 600;
+  color: ${({ theme }) => `rgb(${theme.fontColorSelected || '0, 0, 0'})`};
+  background-color: ${({ theme }) => `rgb(${theme.accentColor || '77, 171, 247'})`};
+  border: none;
+  text-align: center;
+  border-radius: ${vp(4)};
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: ${vp(5)};
+  font-family: 'Nexa-Book', sans-serif;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    background-color: ${({ theme }) => `rgb(${theme.accentColorHover || '116, 192, 252'})`};
+  }
+  
+  &:active {
+    transform: scale(0.98);
+  }
+`;
+
+const Button = ({ children, onClick, margin, width }: ButtonProps) => {
+  return <CustomButton onClick={onClick} margin={margin} width={width}>{children}</CustomButton>;
+};
+
+export default Button;
