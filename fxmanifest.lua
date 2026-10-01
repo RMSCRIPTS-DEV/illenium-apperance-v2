@@ -1,7 +1,7 @@
 fx_version "cerulean"
 game { "gta5" }
 
-author 'snakewiz'
+author 'raymans'
 description 'A flexible player customization script for FiveM.'
 repository 'https://github.com/pedr0fontoura/fivem-appearance'
 version '1.2.2'
